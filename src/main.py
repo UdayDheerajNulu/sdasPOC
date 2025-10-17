@@ -16,7 +16,7 @@ with conn.cursor() as cursor:
     cursor.execute("SHOW TABLES")
     tables = [row[0] for row in cursor.fetchall()]
 
-# Step 2: Get table schemas as strings
+# Step 2: Get table definitions as strings
 def get_table_schema(table):
     with conn.cursor() as cursor:
         cursor.execute(f"DESCRIBE {table}")
@@ -26,7 +26,7 @@ def get_table_schema(table):
 
 table_descriptions = [get_table_schema(tbl) for tbl in tables]
 
-# Step 3: Embed schema descriptions
+# Step 3: Embed definition descriptions
 model = SentenceTransformer("all-MiniLM-L6-v2")
 embeddings = model.encode(table_descriptions)
 
