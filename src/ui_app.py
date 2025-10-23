@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 # Local import
 from groq_langchain_analyzer import GroqLangChainTableAnalyzer
+import sqlite3
 
 load_dotenv()
 
@@ -72,10 +73,77 @@ if run_btn:
 	# Build directed edges from relationship_info
 	edges = []
 	nodes = set()
-	for table_name, info in table_analysis.items():
-		rel = info.get("relationship_info", {}) or {}
+	node_labels = {}
+	# We'll fetch actual table columns from the SQLite file to ensure accurate column lists
+	conn = None
+	try:
+		conn = sqlite3.connect(db_path)
+		cursor = conn.cursor()
+
+		for table_name, info in table_analysis.items():
+			rel = info.get("relationship_info", {}) or {}
+			col_lines = []
+			try:
+				cursor.execute(f"PRAGMA table_info({table_name})")
+				cols = cursor.fetchall()  # cid, name, type, notnull, dflt_value, pk
+			except Exception:
+				cols = []
+
+			pk_set = set()
+			fk_set = set()
+			# Collect pk columns from PRAGMA
+			for c in cols:
+				if len(c) >= 6 and c[5]:
+					pk_set.add(c[1])
+
+			# Collect foreign key child columns from relationship info
+			for fk in rel.get("foreign_keys", []):
+				child_col = fk.get("child_column")
+				if child_col:
+					fk_set.add(child_col)
+
+			# Only show primary keys and foreign keys per user's request
+			if cols:
+				for c in cols:
+					col_name = c[1]
+					if col_name in pk_set:
+						col_lines.append(f'<FONT COLOR="green"><B>{col_name}</B></FONT>')
+					elif col_name in fk_set:
+						col_lines.append(f'<FONT COLOR="blue"><I>{col_name}</I></FONT>')
+				if not col_lines:
+					col_lines.append('<I><FONT COLOR="gray">(no keys)</FONT></I>')
+			else:
+				# Fallback: use analyzer-provided primary_keys and relationship info
+				pk_list = set(info.get("primary_keys", []) or [])
+				fk_list = set(fk.get("child_column") for fk in rel.get("foreign_keys", []) if fk.get("child_column"))
+				for name in sorted(pk_list):
+					col_lines.append(f'<FONT COLOR="green"><B>{name}</B></FONT>')
+				for name in sorted(fk_list - pk_list):
+					col_lines.append(f'<FONT COLOR="blue"><I>{name}</I></FONT>')
+				if not col_lines:
+					col_lines.append('<I><FONT COLOR="gray">(no keys)</FONT></I>')
+
+			label = '<' + f'<B>{table_name}</B><BR/>' + '<BR/>'.join(col_lines) + '>'
+			node_labels[table_name] = label
+			# Build edges and nodes
+			for fk in rel.get("foreign_keys", []):
+				parent = fk.get("parent_table")
+				child = table_name
+				if parent and child:
+					edges.append((child, parent))
+					nodes.add(child)
+					nodes.add(parent)
+			for ref in rel.get("referenced_by", []):
+				child = ref.get("child_table")
+				parent = table_name
+				if parent and child:
+					nodes.add(child)
+					nodes.add(parent)
+
+	finally:
+		if conn:
+			conn.close()
 		for fk in rel.get("foreign_keys", []):
-			# child -> parent
 			parent = fk.get("parent_table")
 			child = table_name
 			if parent and child:
@@ -83,7 +151,6 @@ if run_btn:
 				nodes.add(child)
 				nodes.add(parent)
 		for ref in rel.get("referenced_by", []):
-			# child references this table; ensure nodes included
 			child = ref.get("child_table")
 			parent = table_name
 			if parent and child:
@@ -96,7 +163,7 @@ if run_btn:
 		g = Digraph("tables", format="svg")
 		g.attr(rankdir="LR", fontsize="10")
 		for n in sorted(nodes):
-			g.node(n, shape="box")
+			g.node(n, label=node_labels.get(n, n), shape="box")
 		for c, p in edges:
 			g.edge(c, p, label="FK")
 		st.graphviz_chart(g.source, use_container_width=True)
@@ -150,4 +217,4 @@ if run_btn:
 	st.caption(f"Completed at {report.get('analysis_timestamp', '')}")
 
 else:
-	st.info("Configure the DB path and API key in the sidebar, then click Run Analysis.") 
+	st.info("Configure the DB path and API key in the sidebar, then click Run Analysis.")

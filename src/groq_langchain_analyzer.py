@@ -10,11 +10,10 @@ from typing import Dict, List, Tuple, Any
 # LangChain imports for ChatGroq
 from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
-from langchain.chains import LLMChain
+from langchain_classic.chains import LLMChain
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_groq import ChatGroq  # Changed to ChatGroq
-from langchain.schema import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,40 +40,45 @@ class GroqLangChainTableAnalyzer:
         self.toolkit = SQLDatabaseToolkit(db=self.db, llm=self.llm)
         self.tools = self.toolkit.get_tools()
 
-        # Group definitions for LLM context
-        self.group_definitions = {
-            "ARCHIVE": "Historical data storage, archived records, backup data",
-            "CONFIG": "Configuration tables, settings, lookup data, user roles, customer data",
-            "DATA_RETENTION": "Data retention policies, compliance rules, governance",
-            "INVOICE": "Financial transactions, billing data, invoices, payments",
-            "KEYLOG": "Security logs, access logs, audit trails, session data",
-            "MEDIA_DESTRUCTION": "Secure deletion tracking, media disposal, destruction requests",
-            "METRICS": "Performance metrics, monitoring data, measurements, counters",
-            "SCORECARD": "Business KPIs, dashboard data, performance scorecards",
-            "SYSTEM_VERSIONING": "Version control, deployment tracking, application versions"
-        }
+        # Group definitions will be dynamically created based on relationships
+        self.group_definitions = {}  # Will be populated during analysis
 
-        # Step 1: Table categorization prompt
+        # Step 1: Relationship-based table categorization prompt
         self.categorization_prompt = PromptTemplate(
-            input_variables=["table_schemas", "group_definitions"],
-            template="""You are a database analyst. Analyze these table definitions and categorize each table into functional groups.
+            input_variables=["table_schemas", "relationships_data"],
+            template="""You are a database analyst. Create groups of related tables that should be archived/purged together.
 
-Available Groups:
-{group_definitions}
+GROUPING RULES:
+1. Tables with direct foreign key relationships MUST be in the same group
+2. Tables sharing common business objects (e.g., customer_id in multiple tables) should be in the same group
+3. Look for naming patterns indicating relationships (e.g., order_* tables)
+4. Keep number of groups minimal (ideally 3-5 groups) by combining related business concepts
+5. Each table MUST belong to exactly one group
+6. Name groups based on the primary business entity or process they represent
 
-Table Definitions:
+Table Definitions and Relationships:
 {table_schemas}
 
-For each table, determine the functional group based on table name and columns.
+Relationship Data:
+{relationships_data}
 
 IMPORTANT: Return ONLY valid JSON in this exact format with no additional text:
 
 {{
+  "groups": {{
+    "GROUP_NAME": {{
+      "description": "Brief description of what this group represents",
+      "primary_entity": "The main business entity or process this group revolves around"
+    }}
+  }},
   "analysis": {{
     "table_name": {{
       "group": "GROUP_NAME",
+      "related_tables": ["table1", "table2"],
+      "relationship_type": "PARENT|CHILD|PEER",
+      "common_identifiers": ["shared_column1", "shared_column2"],
       "confidence": 9,
-      "reasoning": "brief explanation of why this table belongs to this group"
+      "reasoning": "explanation focusing on relationships and why tables must be processed together"
     }}
   }}
 }}"""
@@ -298,26 +302,47 @@ Return ONLY a JSON array of column names:
                 return {}
 
     def categorize_tables_with_llm(self, table_schemas):
-        """Step 1: Pure LLM table categorization"""
-        print("🧠 Step 1: Categorizing tables with ChatGroq...")
+        """Step 1: Pure LLM table categorization based on relationships"""
+        print("🧠 Step 1: Analyzing table relationships and creating dynamic groups...")
 
         try:
+            # Analyze relationships first
+            relationships = self.analyze_foreign_key_relationships()
+            
+            # Format relationship data for LLM
+            relationship_text = ""
+            for table_name, rel_info in relationships.items():
+                relationship_text += f"\nTable: {table_name}\n"
+                if rel_info["foreign_keys"]:
+                    fk_list = [f"{fk['parent_table']} (via {fk['child_column']})" 
+                              for fk in rel_info["foreign_keys"]]
+                    relationship_text += f"  References: {', '.join(fk_list)}\n"
+                if rel_info["referenced_by"]:
+                    ref_list = [f"{ref['child_table']} (via {ref['child_column']})" 
+                              for ref in rel_info["referenced_by"]]
+                    relationship_text += f"  Referenced by: {', '.join(ref_list)}\n"
+
+            # Format schema text with column info for identifying common identifiers
+            schema_text = ""
+            for table_name, schema in list(table_schemas.items()):
+                schema_text += f"\nTable: {table_name}\n{schema[:400]}\n"
+
+            # Run LLM analysis
             categorization_chain = LLMChain(
                 llm=self.llm, 
                 prompt=self.categorization_prompt
             )
 
-            # Format definitions for LLM (chunked to avoid token limits)
-            schema_text = ""
-            for table_name, schema in list(table_schemas.items()):  # Limit to prevent overflow
-                schema_text += f"\nTable: {table_name}\n{schema[:400]}\n"
-
             response = categorization_chain.run(
                 table_schemas=schema_text,
-                group_definitions=json.dumps(self.group_definitions, indent=2)
+                relationships_data=relationship_text
             )
 
             result = self.parse_json_response(response)
+            
+            # Update group definitions with dynamically created groups
+            self.group_definitions = result.get("groups", {})
+            
             return result.get("analysis", {})
 
         except Exception as e:
