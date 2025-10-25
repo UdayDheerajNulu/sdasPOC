@@ -31,8 +31,17 @@ with st.sidebar:
 	st.header("Configuration")
 	default_db = "table_group_archival_demo.sqlite"
 	db_path = st.text_input("SQLite DB path", value=default_db, help="Path to a .sqlite/.db file")
-	groq_env = os.getenv("GROQ_API_KEY", "")
-	api_key = st.text_input("GROQ_API_KEY", value=groq_env, type="password")
+	
+	mock_mode = st.checkbox("Mock Mode (No API key needed)", value=False, 
+						   help="Run with mock data without making LLM API calls")
+	
+	if not mock_mode:
+		groq_env = os.getenv("GROQ_API_KEY", "")
+		api_key = st.text_input("GROQ_API_KEY", value=groq_env, type="password")
+	else:
+		api_key = "mock"  # Placeholder value when in mock mode
+		st.info("Running in mock mode - using sample data without LLM calls")
+	
 	st.write("")
 	run_btn = st.button("Run Analysis", type="primary")
 
@@ -40,17 +49,19 @@ if run_btn:
 	if not db_path or not os.path.exists(db_path):
 		st.error(f"Database not found at: {db_path}")
 		st.stop()
-	if not api_key:
-		st.warning("Set GROQ_API_KEY to continue.")
+	
+	if not mock_mode and not api_key:
+		st.warning("Set GROQ_API_KEY to continue or use Mock Mode")
 		st.stop()
 
-	# Pass key to environment for langchain_groq
-	os.environ["GROQ_API_KEY"] = api_key
+	if not mock_mode:
+		# Pass key to environment for langchain_groq
+		os.environ["GROQ_API_KEY"] = api_key
 
 	with st.status("Running analysis...", expanded=True) as status:
 		try:
-			st.write("Initializing analyzer")
-			analyzer = GroqLangChainTableAnalyzer(db_path)
+			st.write("Initializing analyzer" + (" (Mock Mode)" if mock_mode else ""))
+			analyzer = GroqLangChainTableAnalyzer(db_path, mock_mode=mock_mode)
 
 			st.write("Creating comprehensive report")
 			report = analyzer.create_comprehensive_report()
@@ -187,7 +198,7 @@ if run_btn:
 			for t in tables:
 				priority = t.get("intra_group_priority", 2)
 				priority_desc = {1: "HIGH", 2: "MEDIUM", 3: "LOW"}.get(priority, "?")
-				with st.expander(f"{t['table_name']} — Priority {priority} ({priority_desc})", expanded=False):
+				with st.expander(f"{t['table_name']} - Priority {priority} ({priority_desc})", expanded=False):
 					# Archival columns colored
 					prim = t.get("primary_archival_columns", []) or []
 					sec = t.get("secondary_archival_columns", []) or []
@@ -203,15 +214,37 @@ if run_btn:
 						st.markdown("**Relationships**")
 						st.json(rel)
 
+					# RCC classification (from LLM)
+					rcc = t.get("rcc_classification")
+					if rcc:
+						st.markdown("**Retention Class (RCC)**")
+						st.markdown(f"- Assigned RCC: **{rcc.get('assigned_rcc', 'N/A')}** (confidence: {rcc.get('confidence', 'N/A')})")
+						if rcc.get('reasoning'):
+							with st.expander("RCC reasoning"):
+								st.write(rcc.get('reasoning'))
+
+					# Retention lookup columns (from LLM)
+					ret_lookup = t.get("retention_lookup") or t.get("retention_analysis") or {}
+					if ret_lookup:
+						cols = ret_lookup.get("retention_lookup_columns") or ret_lookup.get("retention_lookup_column") or []
+						if cols:
+							st.markdown("**Retention Lookup Columns**")
+							chips_html = "".join([f"<span class='chip chip-primary'>{c}</span>" for c in cols])
+							st.markdown(chips_html, unsafe_allow_html=True)
+						reason = ret_lookup.get("reasoning") or t.get("retention_reasoning")
+						if reason:
+							with st.expander("Retention reasoning"):
+								st.write(reason)
+
 					# Strategy and reasoning
-					if t.get("archival_strategy"):
-						st.caption(f"Strategy: {t['archival_strategy']}")
+					if t.get("retention_strategy"):
+						st.caption(f"Strategy: {t['retention_strategy']}")
 					if t.get("priority_reasoning"):
 						with st.expander("Priority reasoning"):
 							st.write(t["priority_reasoning"]) 
-					if t.get("archival_reasoning"):
-						with st.expander("Archival reasoning"):
-							st.write(t["archival_reasoning"]) 
+					if t.get("retention_reasoning"):
+						with st.expander("Retention reasoning"):
+							st.write(t["retention_reasoning"]) 
 
 	st.divider()
 	st.caption(f"Completed at {report.get('analysis_timestamp', '')}")
