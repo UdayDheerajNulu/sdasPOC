@@ -75,7 +75,7 @@ class GroqLangChainTableAnalyzer:
         # Step 1: Relationship-based table categorization prompt
         self.categorization_prompt = PromptTemplate(
             input_variables=["table_schemas", "relationships_data"],
-            template="""You are a database analyst. Create groups of related tables that should be archived/purged together.
+            template="""You are a database analyst. Create groups of related tables that should be purged together.
 
 GROUPING RULES:
 1. Tables with direct foreign key relationships MUST be in the same group
@@ -103,17 +103,13 @@ IMPORTANT: Return ONLY valid JSON in this exact format with no additional text:
   "analysis": {{
     "table_name": {{
       "group": "GROUP_NAME",
-      "related_tables": ["table1", "table2"],
-      "relationship_type": "PARENT|CHILD|PEER",
-      "common_identifiers": ["shared_column1", "shared_column2"],
-      "confidence": 9,
       "reasoning": "explanation focusing on relationships and why tables must be processed together"
     }}
   }}
 }}"""
         )
 
-        # RCC Classification prompt
+        # Step 2.1 RCC Classification prompt
         self.rcc_classification_prompt = PromptTemplate(
             input_variables=["table_schema", "table_content", "available_rccs"],
             template="""You are a data retention expert. Classify this database table into the most appropriate Retention Class Code (RCC) based on its schema and content.
@@ -136,13 +132,12 @@ Return ONLY valid JSON in this exact format:
 
 {{
     "assigned_rcc": "RCC_CODE",
-    "confidence": 8,
     "reasoning": "Detailed explanation of why this RCC was chosen based on table characteristics"
 }}
 """
         )
 
-        # Prompt for finding the retention lookup column
+        # Step 2.2 Prompt for finding the retention lookup column
         self.retention_column_prompt = PromptTemplate(
             input_variables=["table_schema", "rcc_type", "retention_context", "retention_years", "rcc_hints"],
             template="""Analyze this table schema to find the most appropriate columns to use as retention lookup keys based on the RCC guidance.
@@ -210,7 +205,6 @@ Return ONLY valid JSON:
   "priority_analysis": {{
     "table_name": {{
       "intra_group_priority": 1,
-      "priority_type": "CHILD|BRIDGE|PARENT|INDEPENDENT",
       "foreign_keys": ["parent_table1", "parent_table2"],
       "referenced_by": ["child_table1", "child_table2"],
       "reasoning": "detailed explanation of priority assignment"
@@ -323,7 +317,7 @@ Return ONLY valid JSON:
                 print(f"ERROR: JSON parsing failed: {e}")
                 print(f"Response text: {response_text[:300]}...")
                 return {}
-
+    # Step 2.1
     def classify_table_rcc(self, table_name: str, schema: str, content_hint: str = "") -> Dict:
         """Classify a table into a Retention Class Code using LLM"""
         try:
@@ -354,12 +348,13 @@ Return ONLY valid JSON:
         except Exception as e:
             print(f"ERROR: RCC classification failed for {table_name}: {e}")
             return {}
-
+    # Step 2.2
     def analyze_retention_columns(self, table_name: str, schema: str, rcc_code: str) -> Dict:
         """Find the appropriate retention lookup column based on RCC type"""
         try:
             # Get retention rule for this RCC
             rule = self.retention_manager.available_rccs.get(rcc_code)
+            rcc_hints = self.retention_manager.get_lookup_hints(rcc_code) or []
             if not rule:
                 return {"error": "Unknown RCC"}
 
@@ -370,21 +365,22 @@ Return ONLY valid JSON:
                 context = "Find the column that records when this record was created"
             else:  # EVENT_BASED
                 context = f"Find the column that tracks the timing of: {rule.description}"
-
+            # "table_schema", "rcc_type", "retention_context", "retention_years", "rcc_hints"
             # Run LLM analysis to find the retention lookup column
             chain = LLMChain(prompt=self.retention_column_prompt, llm=self.llm)
             response = chain.run(
                 table_schema=schema,
                 rcc_type=rule.retention_type.value,
                 retention_context=context,
-                retention_years=rule.years
+                retention_years=rule.years,
+                rcc_hints=rcc_hints
             )
             
             return self.parse_json_response(response)
         except Exception as e:
             print(f"ERROR: Retention column analysis failed for {table_name}: {e}")
             return {"error": str(e)}
-
+    # Step 1
     def categorize_tables_with_llm(self, table_schemas):
         """Step 1: Pure LLM table categorization based on relationships"""
         print("Step 1: Analyzing table relationships and creating dynamic groups...")
@@ -432,7 +428,7 @@ Return ONLY valid JSON:
         except Exception as e:
             print(f"ERROR: LLM categorization failed: {e}")
             raise Exception("Pure LLM approach failed - no fallback available")
-
+    # Step 2
     def analyze_archival_columns_with_llm(self, table_name, schema, group):
         """Step 2: RCC-based archival column analysis"""
         print(f"Step 2: Analyzing archival columns for {table_name}...")
@@ -444,9 +440,9 @@ Return ONLY valid JSON:
             
             if not assigned_rcc:
                 return {
-                    "retention_strategy": "unknown",
-                    "retention_recommendation": "Manual review required",
-                    "confidence": 1,
+                    # "retention_strategy": "unknown",
+                    # "retention_recommendation": "Manual review required",
+                    # "confidence": 1,
                     "retention_reasoning": "Could not classify table into RCC",
                     "rcc_classification": rcc_result
                 }
@@ -455,14 +451,14 @@ Return ONLY valid JSON:
             retention_analysis = self.analyze_retention_columns(table_name, schema, assigned_rcc)
             
             # Get retention rule for strategy
-            rule = self.retention_manager.available_rccs.get(assigned_rcc)
-            retention_strategy = f"{rule.retention_type.value} - {rule.years} years" if rule else "Unknown"
-            retention_recommendation = f"{rule.description}" if rule else "Manual review required"
+            # rule = self.retention_manager.available_rccs.get(assigned_rcc)
+            # retention_strategy = f"{rule.retention_type.value} - {rule.years} years" if rule else "Unknown"
+            # retention_recommendation = f"{rule.description}" if rule else "Manual review required"
 
             return {
-                "retention_strategy": retention_strategy,
-                "retention_recommendation": retention_recommendation,
-                "confidence": rcc_result.get("confidence", 5),
+                # "retention_strategy": retention_strategy,
+                # "retention_recommendation": retention_recommendation,
+                # "confidence": rcc_result.get("confidence", 5),
                 "retention_reasoning": rcc_result.get("reasoning", "RCC classification based analysis"),
                 "rcc_classification": rcc_result,
                 "retention_analysis": retention_analysis
@@ -471,7 +467,7 @@ Return ONLY valid JSON:
         except Exception as e:
             print(f"ERROR: LLM archival analysis failed for {table_name}: {e}")
             raise Exception("Pure LLM approach failed - no fallback available")
-
+    # Step 3
     def determine_priorities_with_llm(self, group_name, group_tables, relationships):
         """Step 3: Pure LLM relationship-based priority assignment"""
         print(f"Step 3: Determining priorities for {group_name} group...")

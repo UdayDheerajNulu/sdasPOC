@@ -218,7 +218,7 @@ if run_btn:
 					rcc = t.get("rcc_classification")
 					if rcc:
 						st.markdown("**Retention Class (RCC)**")
-						st.markdown(f"- Assigned RCC: **{rcc.get('assigned_rcc', 'N/A')}** (confidence: {rcc.get('confidence', 'N/A')})")
+						st.markdown(f"- Assigned RCC: {rcc.get('assigned_rcc', 'N/A')}")
 						if rcc.get('reasoning'):
 							with st.expander("RCC reasoning"):
 								st.write(rcc.get('reasoning'))
