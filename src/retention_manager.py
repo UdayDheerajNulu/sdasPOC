@@ -21,72 +21,72 @@ class RetentionRule:
 class RetentionClassCode(Enum):
     """Available Retention Class Codes (RCC)"""
     # Financial & Tax Records
-    FIN_STMT = ("FIN_STMT", RetentionRule(
+    CFA360 = ("CFA360", RetentionRule(
         years=10,
-        retention_type=RetentionType.ACTIVE_PLUS,
-        description="Financial statements and reports - retain active + 10 years",
-        lookup_column_hints=["active_flag", "creation_date", "modified_date"]
-    ))
-    TAX_DOC = ("TAX_DOC", RetentionRule(
-        years=7,
         retention_type=RetentionType.CREATION_BASED,
-        description="Tax documents and returns - 7 years from creation",
+        description="Financial statements and reports - 10 years from created date",
         lookup_column_hints=["creation_date", "document_date"]
     ))
-    FIN_TRANS = ("FIN_TRANS", RetentionRule(
-        years=7,
+    # TAX_DOC = ("TAX_DOC", RetentionRule(
+    #     years=7,
+    #     retention_type=RetentionType.CREATION_BASED,
+    #     description="Tax documents and returns - 7 years from creation",
+    #     lookup_column_hints=["creation_date", "document_date"]
+    # ))
+    BNK460 = ("BNK460", RetentionRule(
+        years=10,
         retention_type=RetentionType.CREATION_BASED,
-        description="Financial transactions - 7 years from transaction date",
-        lookup_column_hints=["transaction_date", "created_at", "posted_at"]
+        description="Financial transactions - 10 years from created date",
+        lookup_column_hints=["created_date","created_at","settlement_date"]
     ))
 
     # Legal & Compliance
-    LEGAL_CONT = ("LEGAL_CONT", RetentionRule(
+    LEG460 = ("LEG460", RetentionRule(
         years=10,
-        retention_type=RetentionType.EVENT_BASED,
-        description="Legal contracts - 10 years from contract termination",
-        lookup_column_hints=["termination_date", "end_date"]
-    ))
-    COMP_DOC = ("COMP_DOC", RetentionRule(
-        years=7,
         retention_type=RetentionType.ACTIVE_PLUS,
-        description="Compliance documents - retain active + 7 years",
+        description="Legal contracts - retain active + 10 years",
         lookup_column_hints=["active_flag", "created_at"]
     ))
-    AUDIT_LOG = ("AUDIT_LOG", RetentionRule(
-        years=5,
+    LEG120 = ("LEG120", RetentionRule(
+        years=10,
         retention_type=RetentionType.CREATION_BASED,
-        description="Audit logs - 5 years from creation",
-        lookup_column_hints=["created_at", "event_timestamp", "log_time"]
+        description="Compliance documents - 10 years from created date",
+        lookup_column_hints=["created_date", "created_at"]
+    ))
+    ADM150 = ("ADM150", RetentionRule(
+        years=1,
+        retention_type=RetentionType.CREATION_BASED,
+        description="Audit logs - 1 year from creation",
+        lookup_column_hints=["created_at", "created_at"]
     ))
 
     # Customer & Business
-    CUST_DATA = ("CUST_DATA", RetentionRule(
-        years=5,
-        retention_type=RetentionType.ACTIVE_PLUS,
-        description="Customer data - retain active + 5 years after last activity",
-        lookup_column_hints=["last_active_at", "is_active", "created_at"]
-    ))
-    BUS_TRANS = ("BUS_TRANS", RetentionRule(
-        years=7,
+    CFA340 = ("CFA340", RetentionRule(
+        years=10,
         retention_type=RetentionType.CREATION_BASED,
-        description="Business transactions - 7 years from transaction date",
-        lookup_column_hints=["transaction_date", "created_at"]
+        description="Customer Personal Information - 10 years from created date",
+        lookup_column_hints=["created_date",  "created_at"]
     ))
+    # BUS_TRANS = ("BUS_TRANS", RetentionRule(
+    #     years=7,
+    #     retention_type=RetentionType.CREATION_BASED,
+    #     description="Business transactions - 7 years from transaction date",
+    #     lookup_column_hints=["transaction_date", "created_at"]
+    # ))
     
-    # HR & Personnel
-    HR_REC = ("HR_REC", RetentionRule(
-        years=7,
-        retention_type=RetentionType.EVENT_BASED,
-        description="HR records - 7 years from employment termination",
-        lookup_column_hints=["termination_date", "end_date", "employment_end"]
-    ))
-    EMP_DATA = ("EMP_DATA", RetentionRule(
-        years=5,
-        retention_type=RetentionType.EVENT_BASED,
-        description="Employee data - 5 years from employment termination",
-        lookup_column_hints=["termination_date", "created_at"]
-    ))
+    # # HR & Personnel
+    # HR_REC = ("HR_REC", RetentionRule(
+    #     years=7,
+    #     retention_type=RetentionType.EVENT_BASED,
+    #     description="HR records - 7 years from employment termination",
+    #     lookup_column_hints=["termination_date", "end_date", "employment_end"]
+    # ))
+    # EMP_DATA = ("EMP_DATA", RetentionRule(
+    #     years=5,
+    #     retention_type=RetentionType.EVENT_BASED,
+    #     description="Employee data - 5 years from employment termination",
+    #     lookup_column_hints=["termination_date", "created_at"]
+    # ))
 
     def __init__(self, code: str, rule: RetentionRule):
         self.code = code
