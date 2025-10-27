@@ -199,6 +199,9 @@ if run_btn:
 				priority = t.get("intra_group_priority", 2)
 				priority_desc = {1: "HIGH", 2: "MEDIUM", 3: "LOW"}.get(priority, "?")
 				with st.expander(f"{t['table_name']} - Priority {priority} ({priority_desc})", expanded=False):
+					if t.get("priority_reasoning"):
+						with st.expander("Priority reasoning"):
+							st.write(t["priority_reasoning"]) 
 					# Archival columns colored
 					prim = t.get("primary_archival_columns", []) or []
 					sec = t.get("secondary_archival_columns", []) or []
@@ -239,9 +242,7 @@ if run_btn:
 					# Strategy and reasoning
 					if t.get("retention_strategy"):
 						st.caption(f"Strategy: {t['retention_strategy']}")
-					if t.get("priority_reasoning"):
-						with st.expander("Priority reasoning"):
-							st.write(t["priority_reasoning"]) 
+					
 					if t.get("retention_reasoning"):
 						with st.expander("Retention reasoning"):
 							st.write(t["retention_reasoning"]) 
