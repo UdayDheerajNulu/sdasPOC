@@ -138,30 +138,64 @@ Return ONLY valid JSON in this exact format:
         )
 
         # Step 2.2 Prompt for finding the retention lookup column
+#         self.retention_column_prompt = PromptTemplate(
+#             input_variables=["table_schema", "rcc_type", "retention_context", "retention_years", "rcc_hints"],
+#             template="""Analyze this table schema to find the most appropriate columns to use as retention lookup keys based on the RCC guidance.
+
+# Table Definition:
+# {table_schema}
+
+# RCC Type: {rcc_type}
+# RCC Hints: {rcc_hints}
+# Retention Duration: {retention_years} years
+# Context: {retention_context}
+
+# Task: Based on the RCC hints and table schema, return a JSON object with:
+# - "retention_lookup_columns": an ordered list of column names (strings) that together can be used to determine retention (for example: ["is_active","created_at"]).
+# - "reasoning": explanation why these columns are appropriate and how they map to the RCC requirements.
+
+# Return ONLY valid JSON in this exact format:
+
+# {{
+#     "retention_lookup_columns": ["col1", "col2", "col3"],
+#     "reasoning": "explain why"
+# }}
+# """
+#         )
         self.retention_column_prompt = PromptTemplate(
-            input_variables=["table_schema", "rcc_type", "retention_context", "retention_years", "rcc_hints"],
-            template="""Analyze this table schema to find the most appropriate columns to use as retention lookup keys based on the RCC guidance.
+    input_variables=["table_schema", "rcc_type", "retention_context", "retention_years", "rcc_hints"],
+    template="""You are a data retention expert tasked with identifying the most appropriate columns to use as retention lookup keys for a database table. Use the provided RCC guidance and table schema to make your decision.
 
-Table Definition:
-{table_schema}
+Table Details:
+- Table Schema: {table_schema}
+- RCC Type: {rcc_type}
+- Retention Duration: {retention_years} years
+- RCC Hints: {rcc_hints}
+- Context: {retention_context}
 
-RCC Type: {rcc_type}
-RCC Hints: {rcc_hints}
-Retention Duration: {retention_years} years
-Context: {retention_context}
+Instructions:
+1. Analyze the Table Schema:
+   - Look at column names, data types, and any naming conventions that indicate timestamps, activity flags, or event markers.
+   - Prioritize columns that align with the RCC hints provided.
 
-Task: Based on the RCC hints and table schema, return a JSON object with:
-- "retention_lookup_columns": an ordered list of column names (strings) that together can be used to determine retention (for example: ["is_active","created_at"]).
-- "reasoning": explanation why these columns are appropriate and how they map to the RCC requirements.
+2. Retention Lookup Column Selection:
+   - For Creation-Based Retention: Focus on columns that indicate when the record was created (e.g., `created_at`, `creation_date`).
+   - For Active-Plus Retention: Focus on columns that indicate whether the record is active (e.g., `is_active`, `active_flag`).
+   - For Event-Based Retention: Focus on columns that track specific events (e.g., `termination_date`, `last_updated`).
+
+3. Provide a Clear Justification:
+   - Explain why the selected columns are appropriate for the retention type and how they map to the RCC requirements.
+   - If no suitable columns are found, suggest alternative strategies or highlight gaps in the schema.
 
 Return ONLY valid JSON in this exact format:
 
 {{
-    "retention_lookup_columns": ["col1", "col2", "col3"],
-    "reasoning": "explain why"
+    "retention_lookup_columns": ["created_at", "is_active"],
+    "reasoning": "The 'created_at' column indicates when the record was created, which aligns with the creation-based retention policy. The 'is_active' column is included as a secondary indicator for active-plus retention."
 }}
+
 """
-        )
+)
 
         # Step 3: Relationship analysis and priority assignment prompt
         self.relationship_priority_prompt = PromptTemplate(

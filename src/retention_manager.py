@@ -57,7 +57,7 @@ class RetentionClassCode(Enum):
         years=1,
         retention_type=RetentionType.CREATION_BASED,
         description="Audit logs - 1 year from creation",
-        lookup_column_hints=["created_at", "created_at"]
+        lookup_column_hints=["created_at"]
     ))
 
     # Customer & Business
